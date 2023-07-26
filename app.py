@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 import streamlit as st
-
 from langchain import PromptTemplate
 from langchain.agents import initialize_agent, Tool
 from langchain.agents import AgentType
@@ -174,9 +173,9 @@ agent = initialize_agent(
 
 # 4. Use streamlit to create a web app
 def main():
-    st.set_page_config(page_title="AI research agent")
+    st.set_page_config(page_title="AI research agent", page_icon=":bird:")
 
-    st.header("AI research agent")
+    st.header("AI research agent :bird:")
     query = st.text_input("Research goal")
 
     if query:
@@ -185,7 +184,6 @@ def main():
         result = agent({"input": query})
 
         st.info(result['output'])
-
 
 if __name__ == '__main__':
     main()
