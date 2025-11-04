@@ -26,6 +26,14 @@ serper_api_key = os.getenv("SERP_API_KEY")
 
 
 def search(query):
+    """Search for information using Serper API.
+
+    Args:
+        query: The search query string
+
+    Returns:
+        Search results as JSON string or error message
+    """
     url = "https://google.serper.dev/search"
 
     payload = json.dumps({
@@ -37,50 +45,64 @@ def search(query):
         'Content-Type': 'application/json'
     }
 
-    response = requests.request("POST", url, headers=headers, data=payload)
-
-    print(response.text)
-
-    return response.text
+    try:
+        response = requests.request("POST", url, headers=headers, data=payload, timeout=30)
+        response.raise_for_status()
+        print(response.text)
+        return response.text
+    except requests.exceptions.Timeout:
+        return json.dumps({"error": "Search request timed out"})
+    except requests.exceptions.RequestException as e:
+        return json.dumps({"error": f"Search failed: {str(e)}"})
 
 
 # 2. Tool for scraping
 def scrape_website(objective: str, url: str):
-    # scrape website, and also will summarize the content based on objective if the content is too large
-    # objective is the original objective & task that user give to the agent, url is the url of the website to be scraped
+    """Scrape website content and summarize if too large.
 
+    Args:
+        objective: The original objective & task that user give to the agent
+        url: The url of the website to be scraped
+
+    Returns:
+        Scraped content or summary, or error message
+    """
     print("Scraping website...")
-    # Define the headers for the request
     headers = {
         'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',
     }
 
-    # Define the data to be sent in the request
     data = {
         "url": url
     }
 
-    # Convert Python object to JSON string
     data_json = json.dumps(data)
 
-    # Send the POST request
-    post_url = f"https://chrome.browserless.io/content?token={brwoserless_api_key}"
-    response = requests.post(post_url, headers=headers, data=data_json)
+    try:
+        post_url = f"https://chrome.browserless.io/content?token={brwoserless_api_key}"
+        response = requests.post(post_url, headers=headers, data=data_json, timeout=60)
 
-    # Check the response status code
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.content, "html.parser")
-        text = soup.get_text()
-        print("CONTENTTTTTT:", text)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+            text = soup.get_text()
+            print("CONTENTTTTTT:", text[:500])  # Only print first 500 chars
 
-        if len(text) > 10000:
-            output = summary(objective, text)
-            return output
+            if len(text) > 10000:
+                output = summary(objective, text)
+                return output
+            else:
+                return text
         else:
-            return text
-    else:
-        print(f"HTTP request failed with status code {response.status_code}")
+            error_msg = f"HTTP request failed with status code {response.status_code}"
+            print(error_msg)
+            return error_msg
+    except requests.exceptions.Timeout:
+        return "Scraping request timed out after 60 seconds"
+    except requests.exceptions.RequestException as e:
+        return f"Scraping failed: {str(e)}"
+    except Exception as e:
+        return f"Error processing website content: {str(e)}"
 
 
 def summary(objective, content):

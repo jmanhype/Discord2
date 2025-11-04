@@ -5,3 +5,8 @@ pydantic==1.*
 langchain
 bs4
 tiktoken
+discord.py
+aiohttp
+psycopg2-binary
+requests
+streamlit

@@ -72,13 +72,13 @@ class ResourceCommands(commands.Cog):
         self.bot = bot
         try:
             self.conn = psycopg2.connect(
-                dbname="mydatabase",
+                dbname=os.getenv("POSTGRES_DB", "mydatabase"),
                 user=os.getenv("POSTGRES_USER"),
                 password=os.getenv("POSTGRES_PASSWORD"),
-                host="localhost"
+                host=os.getenv("POSTGRES_HOST", "localhost")
             )
         except psycopg2.OperationalError as e:
-            print(f"Could not connect to PostgreSQL database: {e}")
+            logging.error(f"Could not connect to PostgreSQL database: {e}")
             self.conn = None
 
     @commands.command(help="Send a resource to a user.")
@@ -243,5 +243,9 @@ class MainBot(commands.Bot):
     async def on_ready(self):
         logging.info(f"Logged in as {self.user.name} (ID: {self.user.id})")
 
-bot = MyBot()
-bot.run("MTEzMjg3MzE2NjA2NzM0NzUyNg.GhmtMT.wp4Ae8ieug-ie83Ic-VpGqfOjl2_rZDqKt2D2s")
+if __name__ == "__main__":
+    if not TOKEN:
+        raise ValueError("Missing required environment variable: DISCORD_TOKEN")
+
+    bot = MainBot()
+    bot.run(TOKEN)
