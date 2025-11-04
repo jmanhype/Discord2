@@ -1,11 +1,17 @@
 import os
+import random
+import asyncio
 import discord
 from discord.ext import commands
 from openai import ChatCompletion
 import aiohttp
 import json
+import psycopg2
+import openai
+from dotenv import load_dotenv
 
-openai.api_key = "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"
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class FunCommands(commands.Cog):
     def __init__(self, bot):
@@ -58,40 +64,64 @@ class ResourceCommands(commands.Cog):
 
     @commands.command(help="Send a resource to a user.")
     async def sendResource(self, ctx, member: discord.Member):
+        if not self.conn:
+            await ctx.send("Database connection not available. Please check configuration.")
+            return
+
         resource_channel = discord.utils.get(ctx.guild.channels, name='resources')
-        resource_messages = [m async for m in resource_channel.history(limit=10)]
-    
-        resource_links = [m.content for m in resource_messages if m.content.startswith('http')]
-    
-        with self.conn.cursor() as cur:
-            for link in resource_links:
-                cur.execute("INSERT INTO resources (link) VALUES (%s) ON CONFLICT (link) DO NOTHING", (link,))
-        self.conn.commit()
+        if not resource_channel:
+            await ctx.send("Resources channel not found.")
+            return
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get('http://localhost:5001/get_resource_data') as response:
-                data = await response.json()
+        try:
+            resource_messages = [m async for m in resource_channel.history(limit=10)]
 
-        for resource in data.values():
-            report = f"Title: {resource['title']}\nLink: {resource['link']}\nDescription: {resource['description']}"
-        await member.send(report)
+            resource_links = [m.content for m in resource_messages if m.content.startswith('http')]
+
+            with self.conn.cursor() as cur:
+                for link in resource_links:
+                    cur.execute("INSERT INTO resources (link) VALUES (%s) ON CONFLICT (link) DO NOTHING", (link,))
+            self.conn.commit()
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get('http://localhost:5001/get_resource_data', timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                    else:
+                        await ctx.send(f"Failed to fetch resource data: HTTP {response.status}")
+                        return
+
+            for resource in data.values():
+                report = f"Title: {resource['title']}\nLink: {resource['link']}\nDescription: {resource['description']}"
+            await member.send(report)
+            await ctx.send(f"Resources sent to {member.mention}")
+        except aiohttp.ClientError as e:
+            await ctx.send(f"Network error: {str(e)}")
+        except Exception as e:
+            await ctx.send(f"Error sending resources: {str(e)}")
 class AppCommand(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command(help="Use the AI research agent app.")
     async def app(self, ctx, *, query):
-        # Send the query to the FastAPI server running the app.py code
-        async with aiohttp.ClientSession() as session:
-            api_url = "http://localhost:8000/research"
-            headers = {"Content-Type": "application/json"}
-            data = {"query": query}
-            response = await session.post(api_url, headers=headers, data=json.dumps(data))
-            if response.status == 200:
-                result = await response.json()
-                await ctx.send(result["result"])
-            else:
-                await ctx.send("Error occurred while processing the query.")
+        """Send the query to the FastAPI server running the app.py code."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                api_url = "http://localhost:8000/"
+                headers = {"Content-Type": "application/json"}
+                data = {"query": query}
+                timeout = aiohttp.ClientTimeout(total=120)
+                async with session.post(api_url, headers=headers, data=json.dumps(data), timeout=timeout) as response:
+                    if response.status == 200:
+                        result = await response.text()
+                        await ctx.send(result)
+                    else:
+                        await ctx.send(f"Error: API returned status {response.status}")
+        except aiohttp.ClientError as e:
+            await ctx.send(f"Network error connecting to research agent: {str(e)}")
+        except asyncio.TimeoutError:
+            await ctx.send("Research request timed out. Try a simpler query.")
 
 class DiscordBot(commands.Bot):
     def __init__(self, token: str, openai_token: str):
@@ -172,5 +202,12 @@ class DiscordBot(commands.Bot):
         else:
             await ctx.send(f"There was an error with your request: {str(error)}") 
 
-bot = DiscordBot("MTEzMDI1Mjk4MzMyMjU0NjI2Nw.Gl_L8s.aLfuiEjoDvzl_DH6VsTaL0nT1y7vKOHiCHhZis", "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")
-bot.run()
+if __name__ == "__main__":
+    DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+    if not DISCORD_TOKEN or not OPENAI_API_KEY:
+        raise ValueError("Missing required environment variables: DISCORD_TOKEN and/or OPENAI_API_KEY")
+
+    bot = DiscordBot(DISCORD_TOKEN, OPENAI_API_KEY)
+    bot.run()
